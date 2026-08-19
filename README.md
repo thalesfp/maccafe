@@ -50,3 +50,7 @@ holder keeps an exclusive `flock` on `lock` for its whole life, so a recycled
 PID can never make `status` report a hold that no longer exists. If the holder
 is killed, the kernel releases the assertion and the next `maccafe on` or
 `maccafe off` clears the leftover `state.json`.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

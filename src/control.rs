@@ -1,4 +1,5 @@
 use std::fmt;
+use std::fs::File;
 use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -8,6 +9,7 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 
 use crate::lock;
+use crate::process;
 use crate::state::{self, AssertionKind, Paths, State};
 
 const HOLDER_HANDSHAKE: Duration = Duration::from_secs(3);
@@ -18,14 +20,18 @@ const SLOWEST_POLL: Duration = Duration::from_millis(25);
 pub enum OffAction {
     NothingToDo,
     ClearStale,
-    Stop { pid: u32 },
+    Stop,
 }
 
+/// A live holder is stopped through the lock it owns, so its state file plays no
+/// part in the decision.
 pub fn decide_off(state: Option<&State>, holder_is_alive: bool) -> OffAction {
-    match (state, holder_is_alive) {
-        (Some(state), true) => OffAction::Stop { pid: state.pid },
-        (Some(_), false) => OffAction::ClearStale,
-        (None, _) => OffAction::NothingToDo,
+    if holder_is_alive {
+        OffAction::Stop
+    } else if state.is_some() {
+        OffAction::ClearStale
+    } else {
+        OffAction::NothingToDo
     }
 }
 
@@ -62,7 +68,7 @@ pub fn render_status(state: Option<&State>, holder_is_alive: bool, now: u64) -> 
 impl fmt::Display for OffAction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Stop { .. } => write!(f, "{}", StatusReport::Off),
+            Self::Stop => write!(f, "{}", StatusReport::Off),
             Self::ClearStale | Self::NothingToDo => {
                 write!(f, "off: this Mac was already free to sleep")
             }
@@ -110,14 +116,32 @@ pub fn read_status(paths: &Paths) -> Result<StatusReport> {
 }
 
 pub fn turn_off(paths: &Paths) -> Result<OffAction> {
-    let (state, alive) = read_hold(paths)?;
-    let action = decide_off(state.as_ref(), alive);
+    let lock_file = paths.lock_file();
+    let vacant = lock::acquire(&lock_file)?;
+
+    let state = match &vacant {
+        Some(vacant) => {
+            lock::disown(vacant)?;
+
+            match state::read(paths) {
+                Ok(state) => state,
+                Err(unreadable) => {
+                    state::remove(paths)?;
+                    return Err(unreadable)
+                        .context("cleared the unreadable record of a hold that had already ended");
+                }
+            }
+        }
+        None => None,
+    };
+
+    let action = decide_off(state.as_ref(), vacant.is_none());
 
     match action {
         OffAction::NothingToDo => {}
         OffAction::ClearStale => state::remove(paths)?,
-        OffAction::Stop { pid } => {
-            stop_holder(pid, &paths.lock_file())?;
+        OffAction::Stop => {
+            let _held = stop_holder(&lock_file)?;
             state::remove(paths)?;
         }
     }
@@ -125,8 +149,46 @@ pub fn turn_off(paths: &Paths) -> Result<OffAction> {
     Ok(action)
 }
 
-fn stop_holder(pid: u32, lock_file: &Path) -> Result<()> {
-    let signalled = unsafe { libc::kill(pid as libc::pid_t, libc::SIGTERM) };
+/// A pid at or below 1 has a special meaning to kill(2): 0 signals the whole
+/// process group and -1 every process the user owns.
+fn holder_pid(pid: u32) -> Result<libc::pid_t> {
+    libc::pid_t::try_from(pid)
+        .ok()
+        .filter(|pid| *pid > 1)
+        .with_context(|| format!("the recorded holder pid {pid} is not a real process"))
+}
+
+enum LockOwner {
+    Free,
+    Held(u32),
+}
+
+/// Stops whichever process the holder lock names, never the pid recorded in the
+/// state file, and returns the lock it released so the caller can clear that
+/// state before another holder can start.
+fn stop_holder(lock_file: &Path) -> Result<File> {
+    let file = lock::open(lock_file)?;
+
+    let owner = poll_for(HOLDER_HANDSHAKE, || {
+        if lock::take(&file)? {
+            return Ok(Some(LockOwner::Free));
+        }
+
+        Ok(lock::owner(lock_file)?.map(LockOwner::Held))
+    })?
+    .context("the holder never recorded which process owns the lock")?;
+
+    let LockOwner::Held(pid) = owner else {
+        return Ok(file);
+    };
+
+    let target = holder_pid(pid)?;
+
+    if process::executable_name(target) != process::own_executable_name() {
+        bail!("the lock owner {pid} is not a maccafe process");
+    }
+
+    let signalled = unsafe { libc::kill(target, libc::SIGTERM) };
 
     if signalled != 0 {
         let err = std::io::Error::last_os_error();
@@ -135,13 +197,10 @@ fn stop_holder(pid: u32, lock_file: &Path) -> Result<()> {
         }
     }
 
-    let file = lock::open(lock_file)?;
-    let stopped = poll_for(HOLDER_HANDSHAKE, || {
-        Ok((!lock::holder_is_alive(&file)?).then_some(()))
-    })?;
+    let stopped = poll_for(HOLDER_HANDSHAKE, || Ok(lock::take(&file)?.then_some(())))?;
 
     if stopped.is_some() {
-        return Ok(());
+        return Ok(file);
     }
 
     bail!("the holder process {pid} did not stop")
@@ -231,11 +290,25 @@ mod tests {
     }
 
     #[test]
+    fn refuses_a_recorded_pid_that_kill_would_read_as_a_broadcast() {
+        assert!(holder_pid(0).is_err());
+        assert!(holder_pid(1).is_err());
+        assert!(holder_pid(u32::MAX).is_err());
+    }
+
+    #[test]
+    fn accepts_a_pid_a_real_holder_can_have() {
+        assert_eq!(holder_pid(4242).unwrap(), 4242);
+    }
+
+    #[test]
     fn stops_the_holder_that_is_still_running() {
-        assert_eq!(
-            decide_off(Some(&a_state()), true),
-            OffAction::Stop { pid: 321 }
-        );
+        assert_eq!(decide_off(Some(&a_state()), true), OffAction::Stop);
+    }
+
+    #[test]
+    fn stops_a_live_holder_whose_state_file_was_deleted() {
+        assert_eq!(decide_off(None, true), OffAction::Stop);
     }
 
     #[test]

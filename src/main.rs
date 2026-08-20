@@ -4,6 +4,7 @@ mod control;
 mod duration;
 mod holder;
 mod lock;
+mod process;
 mod state;
 
 use anyhow::Result;

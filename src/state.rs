@@ -64,10 +64,9 @@ pub fn read(paths: &Paths) -> Result<Option<State>> {
         Err(err) => return Err(err).with_context(|| format!("cannot read {}", file.display())),
     };
 
-    match serde_json::from_str(&raw) {
-        Ok(state) => Ok(Some(state)),
-        Err(_) => Ok(None),
-    }
+    serde_json::from_str(&raw)
+        .map(Some)
+        .with_context(|| format!("cannot read the hold recorded in {}", file.display()))
 }
 
 pub fn write(paths: &Paths, state: &State) -> Result<()> {

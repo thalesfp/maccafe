@@ -27,13 +27,15 @@ impl Until {
 }
 
 pub fn hold(paths: &Paths, kind: AssertionKind, until: Until) -> Result<i32> {
-    let Some(_lock) = lock::acquire(&paths.lock_file())? else {
+    let Some(held) = lock::acquire(&paths.lock_file())? else {
         let owner = state::read(paths)?
             .map(|state| format!(" (pid {})", state.pid))
             .unwrap_or_default();
 
         bail!("maccafe is already keeping this Mac awake{owner}; run `maccafe off` first");
     };
+
+    lock::claim(&held, std::process::id())?;
 
     let _assertion = Assertion::create(kind)?;
 

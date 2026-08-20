@@ -66,7 +66,9 @@ make release
   for exactly this reason.
 - `--json` is a global flag. `cli::parse` rejects it for `run`, which streams
   the output of the command it holds for, so the combination fails as a clap
-  usage error before any command runs, as it does for `mcp`. `CommandChoice::owns_stdout`
+  usage error before any command runs, as it does for `mcp`. `cli::refuse` renders
+  clap's own errors through `report::failure` too, so `--json` holds for a
+  mistyped argument (exit 2), not only for a runtime failure (exit 1). `CommandChoice::owns_stdout`
   holds that list with an exhaustive match, so a new subcommand has to decide.
   Both renderings live in `report.rs`, and `mcp.rs` calls the same
   `report::status`/`report::off`, so the CLI and the MCP tools report a hold

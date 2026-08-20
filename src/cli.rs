@@ -4,25 +4,49 @@ use clap::error::ErrorKind;
 use clap::{Args, CommandFactory, Parser, Subcommand, ValueEnum};
 
 use crate::duration;
+use crate::report;
 use crate::state::AssertionKind;
 
 /// Rejects `--json` for the subcommands that own stdout, so no other module has
 /// to know the combination is impossible.
 pub fn parse() -> Cli {
-    let cli = Cli::parse();
+    let wants_json = std::env::args()
+        .take_while(|argument| argument != "--")
+        .any(|argument| argument == "--json");
+    let cli = Cli::try_parse().unwrap_or_else(|error| refuse(error, wants_json));
 
     if cli.json
         && let Some(reason) = cli.command.owns_stdout()
     {
-        Cli::command()
-            .error(
+        refuse(
+            Cli::command().error(
                 ErrorKind::ArgumentConflict,
                 format!("{reason}, so it has no --json form"),
-            )
-            .exit();
+            ),
+            true,
+        );
     }
 
     cli
+}
+
+/// clap prints its own message and exits, which would leave `--json` callers with
+/// prose on the failure they meet most often: a mistyped argument.
+fn refuse(error: clap::Error, wants_json: bool) -> ! {
+    if !wants_json || !error.use_stderr() {
+        error.exit();
+    }
+
+    let message = error
+        .to_string()
+        .lines()
+        .next()
+        .unwrap_or_default()
+        .trim_start_matches("error: ")
+        .to_string();
+
+    println!("{}", report::failure(true, &anyhow::Error::msg(message)));
+    std::process::exit(error.exit_code());
 }
 
 #[derive(Parser)]

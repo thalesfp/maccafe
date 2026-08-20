@@ -45,9 +45,10 @@ picture.
 
 ## Scripting
 
-Every command except `run` takes `--json`, so a script or an agent does not have
-to read prose. Output goes to stdout, including on failure, and the exit code is
-0 for success and 1 for failure.
+Every command except `run` and `mcp` takes `--json`, so a script or an agent does
+not have to read prose. Output goes to stdout, including on failure. The exit
+code is 0 for success, 1 for a failure while running, and 2 for a bad argument;
+all three shapes are JSON when the flag is present.
 
 ```
 $ maccafe --json on --duration 90m

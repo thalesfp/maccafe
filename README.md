@@ -1,6 +1,6 @@
 # maccafe
 
-Keep a Mac awake from the terminal, like the Caffeine app.
+Keep a Mac awake from the terminal or over MCP, like the Caffeine app.
 
 maccafe takes an IOKit power assertion. By default it takes
 `PreventUserIdleDisplaySleep`, which stops the display from dimming and, as a
@@ -66,6 +66,16 @@ $ maccafe --json status     # after a failure
 
 `expires_at` and `remaining_seconds` are null for a hold with no time limit.
 Timestamps are RFC 3339 in UTC.
+
+## MCP
+
+`maccafe mcp` serves three tools over stdio: `caffeine_on`, `caffeine_off`, and
+`caffeine_status`. They return the same JSON the `--json` flag prints. The hold
+runs in its own process, so it outlives the client disconnecting.
+
+```
+claude mcp add maccafe -- maccafe mcp
+```
 
 ## State
 

@@ -4,6 +4,7 @@ mod control;
 mod duration;
 mod holder;
 mod lock;
+mod mcp;
 mod process;
 mod report;
 mod state;
@@ -59,6 +60,8 @@ fn run(cli: Cli) -> Result<()> {
 
             std::process::exit(code);
         }
+
+        CommandChoice::Mcp => mcp::serve()?,
 
         CommandChoice::Hold { kind, duration } => {
             holder::hold(&paths, kind, Until::for_request(Vec::new(), duration))?;

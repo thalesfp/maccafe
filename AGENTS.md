@@ -20,6 +20,9 @@ about whether the Mac is awake.
   `on` or `off` clears.
 - **`PreventUserIdleDisplaySleep` is the default** because it also blocks idle
   system sleep. `--system-only` is the narrower assertion.
+- **A hold outlives the client that asked for it.** The MCP tools start the same
+  detached holder `on` does, never an assertion inside the server process, so the
+  Mac stays awake after the client disconnects.
 - **Nothing survives a closed lid**, low battery, or a requested sleep. That is
   the platform, not a bug.
 
@@ -35,7 +38,8 @@ about whether the Mac is awake.
 | `src/control.rs` | `on`/`off`/`status`, plus the pure decision functions |
 | `src/duration.rs` | Parsing and formatting `45s`, `90m`, `1h30m` |
 | `src/timestamp.rs` | Unix seconds to RFC 3339, no dependency |
-| `src/report.rs` | The `--json` wire shape |
+| `src/report.rs` | The wire shape shared by `--json` and MCP |
+| `src/mcp.rs` | The stdio MCP server: `caffeine_on`, `caffeine_off`, `caffeine_status` |
 | `src/cli.rs` | The clap surface and the argv for the detached holder |
 | `src/main.rs` | Dispatch only |
 
@@ -62,8 +66,9 @@ make release
   for exactly this reason.
 - `--json` is a global flag. `cli::parse` rejects it for `run`, which streams
   the output of the command it holds for, so the combination fails as a clap
-  usage error before any command runs. Both renderings live in `report.rs`, so
-  `main.rs` never branches on the format.
+  usage error before any command runs, as it does for `mcp`. Both renderings live
+  in `report.rs`, and `mcp.rs` calls the same `status_value`/`off_value`, so the
+  CLI and the MCP tools cannot report different things.
 - The reviewed decision on lock security: a process that can rewrite the lock
   file already runs as the user and can signal any of their processes directly,
   so `fcntl`/`F_GETLK` was considered and declined. Revisit only if maccafe ever

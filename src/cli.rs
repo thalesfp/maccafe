@@ -6,16 +6,22 @@ use clap::{Args, CommandFactory, Parser, Subcommand, ValueEnum};
 use crate::duration;
 use crate::state::AssertionKind;
 
-/// Rejects `run --json` here, so no other module has to know the combination is
-/// impossible.
+/// Rejects `--json` for the subcommands that own stdout, so no other module has
+/// to know the combination is impossible.
 pub fn parse() -> Cli {
     let cli = Cli::parse();
 
-    if cli.json && matches!(cli.command, CommandChoice::Run { .. }) {
+    let streams_instead = match cli.command {
+        CommandChoice::Run { .. } => Some("run streams the output of the command it holds for"),
+        CommandChoice::Mcp => Some("mcp speaks the protocol on stdio"),
+        _ => None,
+    };
+
+    if let (true, Some(reason)) = (cli.json, streams_instead) {
         Cli::command()
             .error(
                 ErrorKind::ArgumentConflict,
-                "run streams the output of the command it holds for, so it has no --json form",
+                format!("{reason}, so it has no --json form"),
             )
             .exit();
     }
@@ -57,6 +63,9 @@ pub enum CommandChoice {
         #[arg(last = true, conflicts_with = "duration")]
         command: Vec<String>,
     },
+
+    /// Serve the maccafe tools over MCP on stdio
+    Mcp,
 
     #[command(hide = true)]
     Hold {

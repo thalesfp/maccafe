@@ -38,12 +38,25 @@ pub fn decide_off(state: Option<&State>, holder_is_alive: bool) -> OffAction {
 #[derive(Debug, PartialEq, Eq)]
 pub enum StatusReport {
     Off,
-    On {
-        pid: u32,
-        kind: AssertionKind,
-        elapsed: Duration,
-        remaining: Option<Duration>,
-    },
+    On(Hold),
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct Hold {
+    pub state: State,
+    pub now: u64,
+}
+
+impl Hold {
+    pub fn elapsed(&self) -> Duration {
+        Duration::from_secs(self.now.saturating_sub(self.state.started_at))
+    }
+
+    pub fn remaining(&self) -> Option<Duration> {
+        self.state
+            .expires_at
+            .map(|expiry| Duration::from_secs(expiry.saturating_sub(self.now)))
+    }
 }
 
 pub fn render_status(state: Option<&State>, holder_is_alive: bool, now: u64) -> StatusReport {
@@ -55,14 +68,10 @@ pub fn render_status(state: Option<&State>, holder_is_alive: bool, now: u64) -> 
         return StatusReport::Off;
     }
 
-    StatusReport::On {
-        pid: state.pid,
-        kind: state.kind,
-        elapsed: Duration::from_secs(now.saturating_sub(state.started_at)),
-        remaining: state
-            .expires_at
-            .map(|expiry| Duration::from_secs(expiry.saturating_sub(now))),
-    }
+    StatusReport::On(Hold {
+        state: state.clone(),
+        now,
+    })
 }
 
 impl fmt::Display for OffAction {
@@ -78,26 +87,21 @@ impl fmt::Display for OffAction {
 
 impl fmt::Display for StatusReport {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Off => write!(f, "off: this Mac can sleep normally"),
-            Self::On {
-                pid,
-                kind,
-                elapsed,
-                remaining,
-            } => {
-                write!(
-                    f,
-                    "on: preventing {} for {} (pid {pid})",
-                    kind.label(),
-                    crate::duration::format(*elapsed)
-                )?;
+        let Self::On(hold) = self else {
+            return write!(f, "off: this Mac can sleep normally");
+        };
 
-                match remaining {
-                    Some(left) => write!(f, ", {} left", crate::duration::format(*left)),
-                    None => write!(f, ", no time limit"),
-                }
-            }
+        write!(
+            f,
+            "on: preventing {} for {} (pid {})",
+            hold.state.kind.label(),
+            crate::duration::format(hold.elapsed()),
+            hold.state.pid
+        )?;
+
+        match hold.remaining() {
+            Some(left) => write!(f, ", {} left", crate::duration::format(left)),
+            None => write!(f, ", no time limit"),
         }
     }
 }
@@ -325,15 +329,12 @@ mod tests {
     fn reports_elapsed_and_remaining_time_for_a_live_hold() {
         let report = render_status(Some(&a_state()), true, 1_240);
 
-        assert_eq!(
-            report,
-            StatusReport::On {
-                pid: 321,
-                kind: AssertionKind::Display,
-                elapsed: Duration::from_secs(240),
-                remaining: Some(Duration::from_secs(360)),
-            }
-        );
+        let StatusReport::On(hold) = report else {
+            panic!("expected a live hold");
+        };
+
+        assert_eq!(hold.elapsed(), Duration::from_secs(240));
+        assert_eq!(hold.remaining(), Some(Duration::from_secs(360)));
     }
 
     #[test]
@@ -345,13 +346,11 @@ mod tests {
 
         let report = render_status(Some(&state), true, 1_240);
 
-        assert!(matches!(
-            report,
-            StatusReport::On {
-                remaining: None,
-                ..
-            }
-        ));
+        let StatusReport::On(hold) = report else {
+            panic!("expected a live hold");
+        };
+
+        assert_eq!(hold.remaining(), None);
     }
 
     #[test]

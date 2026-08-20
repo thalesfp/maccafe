@@ -1,13 +1,35 @@
 use std::time::Duration;
 
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::error::ErrorKind;
+use clap::{Args, CommandFactory, Parser, Subcommand, ValueEnum};
 
 use crate::duration;
 use crate::state::AssertionKind;
 
+/// Rejects `run --json` here, so no other module has to know the combination is
+/// impossible.
+pub fn parse() -> Cli {
+    let cli = Cli::parse();
+
+    if cli.json && matches!(cli.command, CommandChoice::Run { .. }) {
+        Cli::command()
+            .error(
+                ErrorKind::ArgumentConflict,
+                "run streams the output of the command it holds for, so it has no --json form",
+            )
+            .exit();
+    }
+
+    cli
+}
+
 #[derive(Parser)]
 #[command(name = "maccafe", version, about = "Keep this Mac awake")]
 pub struct Cli {
+    /// Print machine-readable output; not supported by `run`
+    #[arg(long, global = true)]
+    pub json: bool,
+
     #[command(subcommand)]
     pub command: CommandChoice,
 }

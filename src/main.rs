@@ -5,36 +5,53 @@ mod duration;
 mod holder;
 mod lock;
 mod process;
+mod report;
 mod state;
+mod timestamp;
 
 use anyhow::Result;
-use clap::Parser;
 
 use cli::{Cli, CommandChoice};
 use holder::Until;
 
 fn main() {
-    if let Err(error) = run() {
-        eprintln!("maccafe: {error:#}");
+    let cli = cli::parse();
+    let json = cli.json;
+
+    if let Err(error) = run(cli) {
+        let message = report::failure(json, &error);
+
+        if json {
+            println!("{message}");
+        } else {
+            eprintln!("{message}");
+        }
+
         std::process::exit(1);
     }
 }
 
-fn run() -> Result<()> {
-    let cli = Cli::parse();
+fn run(cli: Cli) -> Result<()> {
     let paths = state::paths()?;
 
     match cli.command {
         CommandChoice::On { options } => {
-            println!(
-                "{}",
-                control::turn_on(&paths, options.kind(), options.duration)?
-            );
+            let status = control::turn_on(&paths, options.kind(), options.duration)?;
+
+            println!("{}", report::status(cli.json, &status));
         }
 
-        CommandChoice::Off => println!("{}", control::turn_off(&paths)?),
+        CommandChoice::Off => {
+            let action = control::turn_off(&paths)?;
 
-        CommandChoice::Status => println!("{}", control::read_status(&paths)?),
+            println!("{}", report::off(cli.json, &action));
+        }
+
+        CommandChoice::Status => {
+            let status = control::read_status(&paths)?;
+
+            println!("{}", report::status(cli.json, &status));
+        }
 
         CommandChoice::Run { options, command } => {
             let until = Until::for_request(command, options.duration);

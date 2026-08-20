@@ -43,6 +43,30 @@ already in place.
 Only one hold exists at a time, so `maccafe status` always describes the whole
 picture.
 
+## Scripting
+
+Every command except `run` takes `--json`, so a script or an agent does not have
+to read prose. Output goes to stdout, including on failure, and the exit code is
+0 for success and 1 for failure.
+
+```
+$ maccafe --json on --duration 90m
+{"held":true,"kind":"display","pid":49061,"started_at":"2026-08-20T00:35:23Z",
+ "expires_at":"2026-08-20T02:05:23Z","elapsed_seconds":0,"remaining_seconds":5400}
+
+$ maccafe --json status
+{"held":false}
+
+$ maccafe --json off
+{"held":false,"stopped":true}
+
+$ maccafe --json status     # after a failure
+{"error":"..."}
+```
+
+`expires_at` and `remaining_seconds` are null for a hold with no time limit.
+Timestamps are RFC 3339 in UTC.
+
 ## State
 
 `~/Library/Application Support/maccafe/` holds `state.json` and `lock`. The

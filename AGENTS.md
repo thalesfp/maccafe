@@ -66,9 +66,12 @@ make release
   for exactly this reason.
 - `--json` is a global flag. `cli::parse` rejects it for `run`, which streams
   the output of the command it holds for, so the combination fails as a clap
-  usage error before any command runs, as it does for `mcp`. Both renderings live
-  in `report.rs`, and `mcp.rs` calls the same `status_value`/`off_value`, so the
-  CLI and the MCP tools cannot report different things.
+  usage error before any command runs, as it does for `mcp`. `CommandChoice::owns_stdout`
+  holds that list with an exhaustive match, so a new subcommand has to decide.
+  Both renderings live in `report.rs`, and `mcp.rs` calls the same
+  `report::status`/`report::off`, so the CLI and the MCP tools report a hold
+  identically. Failures differ by design: the CLI prints `{"error": ...}` while
+  MCP returns a JSON-RPC error, which is that protocol's own shape.
 - The reviewed decision on lock security: a process that can rewrite the lock
   file already runs as the user and can signal any of their processes directly,
   so `fcntl`/`F_GETLK` was considered and declined. Revisit only if maccafe ever

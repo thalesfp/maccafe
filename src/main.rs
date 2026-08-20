@@ -61,7 +61,7 @@ fn run(cli: Cli) -> Result<()> {
             std::process::exit(code);
         }
 
-        CommandChoice::Mcp => mcp::serve()?,
+        CommandChoice::Mcp => mcp::serve(&paths)?,
 
         CommandChoice::Hold { kind, duration } => {
             holder::hold(&paths, kind, Until::for_request(Vec::new(), duration))?;

@@ -13,6 +13,14 @@ pub enum AssertionKind {
 }
 
 impl AssertionKind {
+    pub fn for_system_only(system_only: bool) -> Self {
+        if system_only {
+            Self::System
+        } else {
+            Self::Display
+        }
+    }
+
     pub fn label(self) -> &'static str {
         match self {
             Self::Display => "display and system sleep",
@@ -29,6 +37,7 @@ pub struct State {
     pub expires_at: Option<u64>,
 }
 
+#[derive(Clone)]
 pub struct Paths {
     pub dir: PathBuf,
 }

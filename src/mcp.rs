@@ -10,19 +10,22 @@ use rmcp::{
 use crate::control;
 use crate::duration;
 use crate::report;
-use crate::state::{self, AssertionKind};
+use crate::state::{AssertionKind, Paths};
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
-pub struct OnRequest {
+struct OnRequest {
     /// How long to stay awake, for example 45s, 90m, 2h, or 1h30m. Omit to stay awake until turned off.
-    pub duration: Option<String>,
+    #[serde(default)]
+    duration: Option<String>,
 
     /// Let the display sleep, and only keep the system awake.
-    pub system_only: Option<bool>,
+    #[serde(default)]
+    system_only: bool,
 }
 
 #[derive(Clone)]
-pub struct Maccafe {
+struct Maccafe {
+    paths: Paths,
     #[allow(dead_code)]
     tool_router: ToolRouter<Maccafe>,
 }
@@ -31,17 +34,15 @@ fn failed(error: anyhow::Error) -> McpError {
     McpError::internal_error(format!("{error:#}"), None)
 }
 
-/// The same wire shape the `--json` flag prints, so both transports agree.
-fn wire(value: serde_json::Value) -> Result<CallToolResult, McpError> {
-    Ok(CallToolResult::success(vec![ContentBlock::text(
-        value.to_string(),
-    )]))
+fn wire(report: String) -> Result<CallToolResult, McpError> {
+    Ok(CallToolResult::success(vec![ContentBlock::text(report)]))
 }
 
 #[tool_router]
 impl Maccafe {
-    pub fn new() -> Self {
+    fn new(paths: Paths) -> Self {
         Self {
+            paths,
             tool_router: Self::tool_router(),
         }
     }
@@ -60,32 +61,24 @@ impl Maccafe {
             .transpose()
             .map_err(|error| McpError::invalid_params(error.to_string(), None))?;
 
-        let kind = if request.system_only.unwrap_or(false) {
-            AssertionKind::System
-        } else {
-            AssertionKind::Display
-        };
+        let kind = AssertionKind::for_system_only(request.system_only);
+        let status = control::turn_on(&self.paths, kind, limit).map_err(failed)?;
 
-        let paths = state::paths().map_err(failed)?;
-        let status = control::turn_on(&paths, kind, limit).map_err(failed)?;
-
-        wire(report::status_value(&status))
+        wire(report::status(true, &status))
     }
 
     #[tool(description = "Let this Mac sleep normally again.")]
     fn caffeine_off(&self) -> Result<CallToolResult, McpError> {
-        let paths = state::paths().map_err(failed)?;
-        let action = control::turn_off(&paths).map_err(failed)?;
+        let action = control::turn_off(&self.paths).map_err(failed)?;
 
-        wire(report::off_value(&action))
+        wire(report::off(true, &action))
     }
 
     #[tool(description = "Report whether this Mac is being kept awake, and for how much longer.")]
     fn caffeine_status(&self) -> Result<CallToolResult, McpError> {
-        let paths = state::paths().map_err(failed)?;
-        let status = control::read_status(&paths).map_err(failed)?;
+        let status = control::read_status(&self.paths).map_err(failed)?;
 
-        wire(report::status_value(&status))
+        wire(report::status(true, &status))
     }
 }
 
@@ -101,13 +94,15 @@ impl ServerHandler for Maccafe {
     }
 }
 
-pub fn serve() -> Result<()> {
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
+/// The tools are synchronous and never overlap, so a single thread serves them;
+/// the timer driver stays on because rmcp uses it to shut the session down.
+pub fn serve(paths: &Paths) -> Result<()> {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
         .build()?;
 
     runtime.block_on(async {
-        let service = Maccafe::new().serve(stdio()).await?;
+        let service = Maccafe::new(paths.clone()).serve(stdio()).await?;
         service.waiting().await?;
 
         Ok(())

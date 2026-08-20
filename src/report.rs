@@ -28,7 +28,7 @@ pub fn failure(json: bool, error: &Error) -> String {
     }
 }
 
-pub(crate) fn status_value(report: &StatusReport) -> Value {
+fn status_value(report: &StatusReport) -> Value {
     let StatusReport::On(hold) = report else {
         return json!({ "held": false });
     };
@@ -44,7 +44,7 @@ pub(crate) fn status_value(report: &StatusReport) -> Value {
     })
 }
 
-pub(crate) fn off_value(action: &OffAction) -> Value {
+fn off_value(action: &OffAction) -> Value {
     json!({
         "held": false,
         "stopped": matches!(action, OffAction::Stop),

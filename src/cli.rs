@@ -11,13 +11,9 @@ use crate::state::AssertionKind;
 pub fn parse() -> Cli {
     let cli = Cli::parse();
 
-    let streams_instead = match cli.command {
-        CommandChoice::Run { .. } => Some("run streams the output of the command it holds for"),
-        CommandChoice::Mcp => Some("mcp speaks the protocol on stdio"),
-        _ => None,
-    };
-
-    if let (true, Some(reason)) = (cli.json, streams_instead) {
+    if cli.json
+        && let Some(reason) = cli.command.owns_stdout()
+    {
         Cli::command()
             .error(
                 ErrorKind::ArgumentConflict,
@@ -77,6 +73,17 @@ pub enum CommandChoice {
     },
 }
 
+impl CommandChoice {
+    /// Why this subcommand cannot also print a report, if it cannot.
+    fn owns_stdout(&self) -> Option<&'static str> {
+        match self {
+            Self::Run { .. } => Some("run streams the output of the command it holds for"),
+            Self::Mcp => Some("mcp speaks the protocol on stdio"),
+            Self::On { .. } | Self::Off | Self::Status | Self::Hold { .. } => None,
+        }
+    }
+}
+
 #[derive(Args)]
 pub struct HoldOptions {
     /// Stop after this long, for example 45s, 90m, 2h, or 1h30m
@@ -90,11 +97,7 @@ pub struct HoldOptions {
 
 impl HoldOptions {
     pub fn kind(&self) -> AssertionKind {
-        if self.system_only {
-            AssertionKind::System
-        } else {
-            AssertionKind::Display
-        }
+        AssertionKind::for_system_only(self.system_only)
     }
 }
 

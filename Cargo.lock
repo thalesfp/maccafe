@@ -430,7 +430,6 @@ dependencies = [
  "core-foundation",
  "libc",
  "rmcp",
- "schemars",
  "serde",
  "serde_json",
  "tokio",

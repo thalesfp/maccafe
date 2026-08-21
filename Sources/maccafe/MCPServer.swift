@@ -36,6 +36,29 @@ private let statusTool = Tool(
     inputSchema: .object(["type": .string("object"), "properties": .object([:])])
 )
 
+/// An omitted argument is a default; an argument of the wrong type is a mistake,
+/// and answering it with a different hold than the caller asked for is worse
+/// than refusing.
+func text(_ name: String, in arguments: [String: Value]?) throws -> String? {
+    guard let value = arguments?[name], value != .null else { return nil }
+
+    guard let text = value.stringValue else {
+        throw Failure("\(name) must be a string")
+    }
+
+    return text
+}
+
+func flag(_ name: String, in arguments: [String: Value]?) throws -> Bool? {
+    guard let value = arguments?[name], value != .null else { return nil }
+
+    guard let flag = value.boolValue else {
+        throw Failure("\(name) must be true or false")
+    }
+
+    return flag
+}
+
 func serveMCP() async throws {
     let server = Server(
         name: "maccafe",
@@ -51,11 +74,11 @@ func serveMCP() async throws {
         let request: Request
         switch params.name {
         case "caffeine_on":
-            let duration = params.arguments?["duration"]?.stringValue
-            let systemOnly = params.arguments?["system_only"]?.boolValue ?? false
-
             do {
-                request = try .hold(duration: duration, systemOnly: systemOnly)
+                request = try .hold(
+                    duration: text("duration", in: params.arguments),
+                    systemOnly: flag("system_only", in: params.arguments) ?? false
+                )
             } catch {
                 throw MCPError.invalidParams("\(error)")
             }

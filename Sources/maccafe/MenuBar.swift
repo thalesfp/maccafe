@@ -36,14 +36,16 @@ final class MenuBarController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         self.item = item
 
-        agent.observe { [weak self] hold in
-            Task { @MainActor in self?.draw(hold) }
+        agent.observe { [weak self] in
+            Task { @MainActor in self?.draw() }
         }
     }
 
     /// The running hold is the only source of truth for the kind, so the menu
     /// remembers what it last saw rather than keeping a rival preference.
-    private func draw(_ hold: Hold?) {
+    private func draw() {
+        let hold = agent.hold
+
         if let hold {
             preferredSystemOnly = hold.kind == .system
         }

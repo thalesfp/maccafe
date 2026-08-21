@@ -3,7 +3,6 @@ APP := Maccafe.app
 STAGE := .build/$(APP)
 INSTALLED := /Applications/$(APP)
 SYMLINK := /usr/local/bin/maccafe
-LABEL := me.thales.maccafe.agent
 BINARY := .build/release/maccafe
 
 .DEFAULT_GOAL := help
@@ -47,23 +46,36 @@ bundle: release ## Assemble Maccafe.app
 	cp Resources/me.thales.maccafe.agent.plist $(STAGE)/Contents/Library/LaunchAgents/
 	codesign --force --sign - --identifier me.thales.maccafe $(STAGE)
 
-# launchd pins the code signature it saw at registration. Renewing that pin needs
-# the unregister to run in an earlier process than the register, and to wait for
-# launchd to forget the job; SMAppService reports notRegistered before it has.
+# launchd pins the code signature it saw at registration, and renewing that pin
+# needs the unregister to run in an earlier process than the register. The
+# uninstall command blocks on unregisterWithCompletionHandler, which the header
+# calls the point after which re-registering is safe. Measured on macOS 26.6.2,
+# that is necessary but not sufficient: registering straight after it still
+# re-pins the old signature and launchd kills the new agent with EX_CONFIG, so
+# the recipe also settles before registering.
 install: bundle ## Install the app, register the agent, and link the CLI
 	rm -rf $(INSTALLED)
 	cp -R $(STAGE) $(INSTALLED)
-	-$(INSTALLED)/Contents/MacOS/maccafe uninstall
-	@n=0; while launchctl print gui/$$UID/$(LABEL) >/dev/null 2>&1; do \
-		n=$$((n+1)); [ $$n -gt 50 ] && { echo "launchd still knows $(LABEL)"; exit 1; }; \
-		sleep 0.2; \
-	done
+	$(INSTALLED)/Contents/MacOS/maccafe uninstall
+	@sleep 5
 	$(INSTALLED)/Contents/MacOS/maccafe install
 	sudo ln -sf $(INSTALLED)/Contents/MacOS/maccafe $(SYMLINK)
 
+# The app is deleted last: a registration launchd still holds would point at a
+# bundle that is no longer there. Either bundle can unregister the other's
+# registration, so the built one goes first: an interrupted copy can leave the
+# installed executable in place without the plist SMAppService reads. A run with
+# neither bundle stops instead of reporting success.
 uninstall: ## Remove the agent, the CLI link, and the app
-	-$(INSTALLED)/Contents/MacOS/maccafe uninstall
-	-sudo rm -f $(SYMLINK)
+	@if [ -x "$(STAGE)/Contents/MacOS/maccafe" ]; then \
+		"$(STAGE)/Contents/MacOS/maccafe" uninstall; \
+	elif [ -x "$(INSTALLED)/Contents/MacOS/maccafe" ]; then \
+		"$(INSTALLED)/Contents/MacOS/maccafe" uninstall; \
+	else \
+		echo "no maccafe bundle to unregister from; run 'make bundle' first"; \
+		exit 1; \
+	fi
+	sudo rm -f $(SYMLINK)
 	rm -rf $(INSTALLED)
 
 clean: ## Delete the build directory

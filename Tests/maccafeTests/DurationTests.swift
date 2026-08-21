@@ -30,6 +30,21 @@ struct DurationParsingTests {
         #expect(throws: DurationText.ParseError.self) { try DurationText.parse(input) }
     }
 
+    @Test(
+        "refuses a number too big to hold rather than trapping",
+        arguments: [
+            "9223372036854775808s", "9223372036854775807h", "99999999999999999999s", "366d",
+        ]
+    )
+    func refusesADurationTooBigToHold(_ input: String) {
+        #expect(throws: DurationText.ParseError.self) { try DurationText.parse(input) }
+    }
+
+    @Test("accepts the longest hold it offers")
+    func acceptsTheLongestHold() throws {
+        #expect(try DurationText.parse("365d") == DurationText.longest)
+    }
+
     @Test("writes a readable remaining time")
     func writesAReadableRemainingTime() {
         #expect(DurationText.format(0) == "0s")

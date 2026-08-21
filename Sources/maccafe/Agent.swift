@@ -14,7 +14,7 @@ final class Agent: Sendable {
         var hold: Hold?
         var assertion: Assertion?
         var timer: DispatchSourceTimer?
-        var observer: (@Sendable (Hold?) -> Void)?
+        var observer: (@Sendable () -> Void)?
     }
 
     private let guarded = Mutex(Guarded())
@@ -24,14 +24,13 @@ final class Agent: Sendable {
         guarded.withLock { $0.hold }
     }
 
-    func observe(_ observer: @escaping @Sendable (Hold?) -> Void) {
-        let current = guarded.withLock { held -> Hold? in
-            held.observer = observer
+    /// The observer is told that something changed, never what it changed to:
+    /// two requests can commit under the lock and then race to notify, so only
+    /// a fresh read of `hold` is guaranteed not to be stale.
+    func observe(_ observer: @escaping @Sendable () -> Void) {
+        guarded.withLock { $0.observer = observer }
 
-            return held.hold
-        }
-
-        observer(current)
+        observer()
     }
 
     func handle(_ request: Request) -> Reply {
@@ -55,16 +54,16 @@ final class Agent: Sendable {
     @discardableResult
     private func run(_ action: Action) -> Reply {
         do {
-            let (reply, hold, observer) = try guarded.withLock { held in
+            let (reply, observer) = try guarded.withLock { held in
                 let outcome = apply(action, to: held.hold, at: Date())
 
                 try execute(outcome.effect, on: &held)
                 held.hold = outcome.hold
 
-                return (outcome.reply, held.hold, held.observer)
+                return (outcome.reply, held.observer)
             }
 
-            observer?(hold)
+            observer?()
 
             return reply
         } catch {

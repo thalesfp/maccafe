@@ -18,6 +18,9 @@ let package = Package(
             ],
             linkerSettings: [.linkedFramework("IOKit"), .linkedFramework("AppKit")]
         ),
-        .testTarget(name: "maccafeTests", dependencies: ["maccafe"]),
+        .testTarget(
+            name: "maccafeTests",
+            dependencies: ["maccafe", .product(name: "MCP", package: "swift-sdk")]
+        ),
     ]
 )

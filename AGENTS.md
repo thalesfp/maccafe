@@ -5,7 +5,7 @@ with a CLI and an MCP server as clients of it.
 
 ## Shape
 
-One executable, three personalities, all inside `Maccafe.app`:
+One executable, three personalities, all inside `MacCafe.app`:
 
 - `maccafe agent` is the menu bar app. launchd starts it. It owns the assertion.
 - `maccafe on|off|status` are clients that talk to the agent over XPC.
@@ -32,6 +32,11 @@ about whether the Mac is awake, or the agent will not start at all.
   `DispatchQueue.main.sync` from the listener queue deadlocks. The agent state
   lives behind a `Mutex` for exactly this reason, and the menu bar is updated
   one-way with a hop onto the main actor.
+- **The agent must own the process main thread.** `NSApplication.run()` is
+  entered from a synchronous `main`, not from inside a main-actor job: entering
+  it from a job leaves the main queue undrained and the menu bar never redraws.
+  That is why nothing in `CLI.swift` is `async` and the one async subcommand,
+  `mcp`, waits on a task through `blocking`.
 - **launchd pins the code signature it saw at registration.** A bundle replaced
   in place is killed as a launch constraint violation (`EX_CONFIG`, SIGKILL,
   code signature invalid). Renewing the pin needs the `unregister` to run in an
@@ -52,6 +57,8 @@ about whether the Mac is awake, or the agent will not start at all.
 | `Sources/maccafe/Render.swift` | Prose and JSON reports, and the seconds derived from the dates |
 | `Sources/maccafe/Duration.swift` | Parsing and formatting `45s`, `90m`, `1h30m` |
 | `Sources/maccafe/Agent.swift` | The `XPCListener`, the effect executor, and the deadline timer |
+| `Sources/maccafe/Gauge.swift` | The pure gauge: which step the cup is drawn at, and when that changes |
+| `Sources/maccafe/CupGlyph.swift` | The drawn menu bar glyph, a template image at each gauge step |
 | `Sources/maccafe/MenuBar.swift` | The `NSStatusItem` and its menu |
 | `Sources/maccafe/Client.swift` | The `XPCSession` client and the `SMAppService` installer |
 | `Sources/maccafe/MCPServer.swift` | The stdio MCP server: `caffeine_on`, `caffeine_off`, `caffeine_status` |
@@ -65,7 +72,7 @@ about whether the Mac is awake, or the agent will not start at all.
 ```
 make            # list every target
 make verify     # format check, warnings as errors, tests: the gate
-make bundle     # assemble Maccafe.app
+make bundle     # assemble MacCafe.app
 make install    # install to /Applications, register the agent, link the CLI
 make uninstall
 make run ARGS="status"

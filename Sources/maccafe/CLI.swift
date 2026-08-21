@@ -2,7 +2,7 @@ import ArgumentParser
 import Foundation
 import Synchronization
 
-struct Maccafe: AsyncParsableCommand {
+struct Maccafe: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "maccafe",
         abstract: "Keep this Mac awake",
@@ -71,14 +71,14 @@ struct Status: ParsableCommand {
     }
 }
 
-struct Serve: AsyncParsableCommand {
+struct Serve: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "mcp",
         abstract: "Serve the maccafe tools over MCP on stdio"
     )
 
-    func run() async throws {
-        try await serveMCP()
+    func run() throws {
+        try blocking { try await serveMCP() }
     }
 }
 
@@ -104,12 +104,35 @@ struct Uninstall: ParsableCommand {
     }
 }
 
-struct RunAgent: AsyncParsableCommand {
+struct RunAgent: ParsableCommand {
     static let configuration = CommandConfiguration(commandName: "agent", shouldDisplay: false)
 
-    func run() async throws {
-        try await MainActor.run { try serveAgent() }
+    func run() throws {
+        try MainActor.assumeIsolated { try serveAgent() }
     }
+}
+
+/// `agent` nests an AppKit run loop in main and has to own the thread: entering
+/// it from inside a main-actor job leaves the main queue undrained, so the menu
+/// bar never redraws. Nothing here is async, so the async work waits on a task.
+func blocking(_ operation: @escaping @Sendable () async throws -> Void) throws {
+    let outcome = Mutex<Result<Void, any Error>?>(nil)
+    let finished = DispatchSemaphore(value: 0)
+
+    Task {
+        do {
+            try await operation()
+            outcome.withLock { $0 = .success(()) }
+        } catch {
+            outcome.withLock { $0 = .failure(error) }
+        }
+
+        finished.signal()
+    }
+
+    finished.wait()
+
+    try outcome.withLock { $0 }?.get()
 }
 
 @main
@@ -118,7 +141,7 @@ enum Entry {
     /// as an unknown option, so its rejection must not be rendered as JSON.
     private static let reportingCommands: Set<String> = ["on", "off", "status"]
 
-    static func main() async {
+    static func main() {
         let arguments = CommandLine.arguments.dropFirst()
         let wantsJSON =
             arguments.first.map(reportingCommands.contains) == true
@@ -127,11 +150,7 @@ enum Entry {
         do {
             var command = try Maccafe.parseAsRoot()
 
-            if var command = command as? AsyncParsableCommand {
-                try await command.run()
-            } else {
-                try command.run()
-            }
+            try command.run()
         } catch {
             fail(error, asJSON: wantsJSON)
         }

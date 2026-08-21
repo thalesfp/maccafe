@@ -24,7 +24,7 @@ fresh terminal works whether or not the icon is already there.
 make install
 ```
 
-This puts `Maccafe.app` in `/Applications`, registers the agent as a login item,
+This puts `MacCafe.app` in `/Applications`, registers the agent as a login item,
 and links the CLI into `/usr/local/bin`. The link is the only step that needs
 `sudo`.
 

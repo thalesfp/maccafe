@@ -1,12 +1,12 @@
 ARGS ?= status
-APP := Maccafe.app
+APP := MacCafe.app
 STAGE := .build/$(APP)
 INSTALLED := /Applications/$(APP)
 SYMLINK := /usr/local/bin/maccafe
 BINARY := .build/release/maccafe
 
 .DEFAULT_GOAL := help
-.PHONY: help build release run test fmt fmt-check lint verify bundle install uninstall clean
+.PHONY: help build release run test fmt fmt-check lint verify icon bundle install uninstall clean
 
 help: ## Show this help
 	@echo "maccafe"
@@ -38,12 +38,18 @@ lint: ## Build treating warnings as errors
 
 verify: fmt-check lint test ## Check formatting, lint, and test
 
-bundle: release ## Assemble Maccafe.app
+icon: ## Redraw Resources/MacCafe.icns
+	rm -rf .build/MacCafe.iconset
+	swift Tools/MakeIcon.swift .build/MacCafe.iconset
+	iconutil -c icns .build/MacCafe.iconset -o Resources/MacCafe.icns
+
+bundle: release ## Assemble MacCafe.app
 	rm -rf $(STAGE)
-	mkdir -p $(STAGE)/Contents/MacOS $(STAGE)/Contents/Library/LaunchAgents
+	mkdir -p $(STAGE)/Contents/MacOS $(STAGE)/Contents/Library/LaunchAgents $(STAGE)/Contents/Resources
 	cp $(BINARY) $(STAGE)/Contents/MacOS/maccafe
 	cp Resources/Info.plist $(STAGE)/Contents/Info.plist
 	cp Resources/me.thales.maccafe.agent.plist $(STAGE)/Contents/Library/LaunchAgents/
+	cp Resources/MacCafe.icns $(STAGE)/Contents/Resources/
 	codesign --force --sign - --identifier me.thales.maccafe $(STAGE)
 
 # launchd pins the code signature it saw at registration, and renewing that pin

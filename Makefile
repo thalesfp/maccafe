@@ -1,9 +1,13 @@
 ARGS ?= status
-CARGO ?= $(firstword $(wildcard $(HOME)/.cargo/bin/cargo /opt/homebrew/opt/rustup/bin/cargo) cargo)
-export PATH := $(dir $(CARGO)):$(PATH)
+APP := Maccafe.app
+STAGE := .build/$(APP)
+INSTALLED := /Applications/$(APP)
+SYMLINK := /usr/local/bin/maccafe
+LABEL := me.thales.maccafe.agent
+BINARY := .build/release/maccafe
 
 .DEFAULT_GOAL := help
-.PHONY: help build release run test fmt fmt-check lint verify install uninstall clean
+.PHONY: help build release run test fmt fmt-check lint verify bundle install uninstall clean
 
 help: ## Show this help
 	@echo "maccafe"
@@ -13,33 +17,55 @@ help: ## Show this help
 		printf "  \033[1m%-12s\033[0m %s\n", target[1], $$2 }' $(MAKEFILE_LIST)
 
 build: ## Build the debug binary
-	$(CARGO) build
+	swift build
 
 release: ## Build the optimized binary
-	$(CARGO) build --release
+	swift build -c release
 
 run: ## Run the CLI, for example: make run ARGS="on --duration 2h"
-	$(CARGO) run -- $(ARGS)
+	swift run maccafe $(ARGS)
 
 test: ## Run the tests
-	$(CARGO) test
+	swift test
 
 fmt: ## Format the sources
-	$(CARGO) fmt
+	swift format --in-place --recursive Sources Tests Package.swift
 
 fmt-check: ## Check the sources are formatted
-	$(CARGO) fmt --check
+	swift format lint --strict --recursive Sources Tests Package.swift
 
-lint: ## Run clippy and treat warnings as errors
-	$(CARGO) clippy --all-targets -- -D warnings
+lint: ## Build treating warnings as errors
+	swift build -Xswiftc -warnings-as-errors
 
 verify: fmt-check lint test ## Check formatting, lint, and test
 
-install: ## Install maccafe into ~/.cargo/bin
-	$(CARGO) install --path .
+bundle: release ## Assemble Maccafe.app
+	rm -rf $(STAGE)
+	mkdir -p $(STAGE)/Contents/MacOS $(STAGE)/Contents/Library/LaunchAgents
+	cp $(BINARY) $(STAGE)/Contents/MacOS/maccafe
+	cp Resources/Info.plist $(STAGE)/Contents/Info.plist
+	cp Resources/me.thales.maccafe.agent.plist $(STAGE)/Contents/Library/LaunchAgents/
+	codesign --force --sign - --identifier me.thales.maccafe $(STAGE)
 
-uninstall: ## Remove the installed maccafe
-	$(CARGO) uninstall maccafe
+# launchd pins the code signature it saw at registration. Renewing that pin needs
+# the unregister to run in an earlier process than the register, and to wait for
+# launchd to forget the job; SMAppService reports notRegistered before it has.
+install: bundle ## Install the app, register the agent, and link the CLI
+	rm -rf $(INSTALLED)
+	cp -R $(STAGE) $(INSTALLED)
+	-$(INSTALLED)/Contents/MacOS/maccafe uninstall
+	@n=0; while launchctl print gui/$$UID/$(LABEL) >/dev/null 2>&1; do \
+		n=$$((n+1)); [ $$n -gt 50 ] && { echo "launchd still knows $(LABEL)"; exit 1; }; \
+		sleep 0.2; \
+	done
+	$(INSTALLED)/Contents/MacOS/maccafe install
+	sudo ln -sf $(INSTALLED)/Contents/MacOS/maccafe $(SYMLINK)
+
+uninstall: ## Remove the agent, the CLI link, and the app
+	-$(INSTALLED)/Contents/MacOS/maccafe uninstall
+	-sudo rm -f $(SYMLINK)
+	rm -rf $(INSTALLED)
 
 clean: ## Delete the build directory
-	$(CARGO) clean
+	swift package clean
+	rm -rf $(STAGE)

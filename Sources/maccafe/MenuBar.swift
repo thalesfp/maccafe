@@ -10,17 +10,9 @@ final class MenuBarController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ("4 hours", 14_400),
     ]
 
-    private static let idleIcon = NSImage(
-        systemSymbolName: "cup.and.saucer",
-        accessibilityDescription: "maccafe: off"
-    )
-    private static let holdingIcon = NSImage(
-        systemSymbolName: "cup.and.saucer.fill",
-        accessibilityDescription: "maccafe: on"
-    )
-
     private let agent: Agent
     private var item: NSStatusItem?
+    private var gauge: Timer?
     private var preferredSystemOnly = false
 
     init(agent: Agent) {
@@ -29,7 +21,7 @@ final class MenuBarController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         let menu = NSMenu()
         menu.delegate = self
         item.menu = menu
@@ -50,7 +42,29 @@ final class MenuBarController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             preferredSystemOnly = hold.kind == .system
         }
 
-        item?.button?.image = hold == nil ? Self.idleIcon : Self.holdingIcon
+        let reading = Gauge.reading(for: hold, at: Date())
+
+        item?.button?.image = CupGlyph.image(step: reading.step)
+
+        rearmGauge(at: reading.changesAt)
+    }
+
+    /// The gauge wakes when the drawn step changes rather than on a tick, so a
+    /// whole hold costs a handful of redraws and an idle agent costs none.
+    private func rearmGauge(at moment: Date?) {
+        gauge?.invalidate()
+        gauge = nil
+
+        guard let moment else { return }
+
+        gauge = Timer.scheduledTimer(
+            withTimeInterval: max(1, moment.timeIntervalSinceNow),
+            repeats: false
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.draw()
+            }
+        }
     }
 
     func menuWillOpen(_ menu: NSMenu) {
@@ -66,7 +80,11 @@ final class MenuBarController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(displaySleep())
         menu.addItem(.separator())
         menu.addItem(
-            NSMenuItem(title: "Quit Maccafe", action: #selector(quit), keyEquivalent: "q")
+            NSMenuItem(title: "About MacCafe", action: #selector(about), keyEquivalent: "")
+                .targeted(to: self)
+        )
+        menu.addItem(
+            NSMenuItem(title: "Quit MacCafe", action: #selector(quit), keyEquivalent: "q")
                 .targeted(to: self)
         )
     }
@@ -147,6 +165,20 @@ final class MenuBarController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         preferredSystemOnly.toggle()
 
         agent.change(to: .forSystemOnly(preferredSystemOnly))
+    }
+
+    /// An accessory app is never the active one, so the panel would open behind
+    /// whatever is in front unless the app asks for the front first.
+    @objc private func about() {
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        NSApplication.shared.orderFrontStandardAboutPanel(
+            options: [
+                .credits: NSAttributedString(
+                    string: "Keeps this Mac awake with an IOKit power assertion.",
+                    attributes: [.font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)]
+                )
+            ]
+        )
     }
 
     @objc private func quit() {

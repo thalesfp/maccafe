@@ -53,11 +53,17 @@ bundle: release ## Assemble Maccafe.app
 # that is necessary but not sufficient: registering straight after it still
 # re-pins the old signature and launchd kills the new agent with EX_CONFIG, so
 # the recipe also settles before registering.
+#
+# The built bundle does the unregistering, so nothing touches the installed one
+# until that has succeeded: an upgrade that fails there leaves the working
+# installation alone rather than stranding a new signature under an old pin. The
+# reverse window is accepted: a copy that fails after the unregister leaves the
+# old bundle unregistered, which says so and is fixed by running this again.
 install: bundle ## Install the app, register the agent, and link the CLI
+	$(STAGE)/Contents/MacOS/maccafe uninstall
+	@sleep 5
 	rm -rf $(INSTALLED)
 	cp -R $(STAGE) $(INSTALLED)
-	$(INSTALLED)/Contents/MacOS/maccafe uninstall
-	@sleep 5
 	$(INSTALLED)/Contents/MacOS/maccafe install
 	sudo ln -sf $(INSTALLED)/Contents/MacOS/maccafe $(SYMLINK)
 

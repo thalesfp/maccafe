@@ -37,6 +37,10 @@ about whether the Mac is awake, or the agent will not start at all.
   it from a job leaves the main queue undrained and the menu bar never redraws.
   That is why nothing in `CLI.swift` is `async` and the one async subcommand,
   `mcp`, waits on a task through `blocking`.
+- **`SMAppService` resolves the service against `Bundle.main`.** Only the copy
+  of the app that holds the registration can see or remove it; any other copy
+  reads `.notRegistered`. That is why `make install` and `make uninstall` run
+  the *installed* binary to unregister, never the staged one.
 - **launchd pins the code signature it saw at registration.** A bundle replaced
   in place is killed as a launch constraint violation (`EX_CONFIG`, SIGKILL,
   code signature invalid). Renewing the pin needs the `unregister` to run in an

@@ -101,8 +101,10 @@ install: bundle ## Install the app, register the agent, and link the CLI
 		echo "maccafe: did not take; stop it with 'kill $$stray' and run this again"; \
 		exit 1; \
 	fi
-	$(STAGE)/Contents/MacOS/maccafe uninstall
-	@sleep 5
+	@if [ -x "$(INSTALLED)/Contents/MacOS/maccafe" ]; then \
+		"$(INSTALLED)/Contents/MacOS/maccafe" uninstall || exit $$?; \
+		sleep 5; \
+	fi
 	rm -rf $(INSTALLED)
 	cp -R $(STAGE) $(INSTALLED)
 	$(INSTALLED)/Contents/MacOS/maccafe install
@@ -116,15 +118,15 @@ install: bundle ## Install the app, register the agent, and link the CLI
 	fi
 
 # The app is deleted last: a registration launchd still holds would point at a
-# bundle that is no longer there. Either bundle can unregister the other's
-# registration, so the built one goes first: an interrupted copy can leave the
-# installed executable in place without the plist SMAppService reads. A run with
-# neither bundle stops instead of reporting success.
+# bundle that is no longer there. The installed bundle goes first because
+# `SMAppService` resolves against the calling bundle, so only that copy can see
+# and remove the registration; the built one is the fallback for an app already
+# deleted. A run with neither bundle stops instead of reporting success.
 uninstall: ## Remove the agent, the CLI link, and the app
-	@if [ -x "$(STAGE)/Contents/MacOS/maccafe" ]; then \
-		"$(STAGE)/Contents/MacOS/maccafe" uninstall; \
-	elif [ -x "$(INSTALLED)/Contents/MacOS/maccafe" ]; then \
+	@if [ -x "$(INSTALLED)/Contents/MacOS/maccafe" ]; then \
 		"$(INSTALLED)/Contents/MacOS/maccafe" uninstall; \
+	elif [ -x "$(STAGE)/Contents/MacOS/maccafe" ]; then \
+		"$(STAGE)/Contents/MacOS/maccafe" uninstall; \
 	else \
 		echo "no maccafe bundle to unregister from; run 'make bundle' first"; \
 		exit 1; \

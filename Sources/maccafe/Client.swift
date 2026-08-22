@@ -49,12 +49,20 @@ enum Installer {
         }
     }
 
+    /// `SMAppService` resolves the service against `Bundle.main`, so a copy of
+    /// the app that was never registered reads `.notRegistered` while the
+    /// registered copy keeps its pinned signature.
+    enum Removal: Sendable {
+        case removed
+        case notRegistered
+    }
+
     /// `unregisterAndReturnError` returns before launchd has killed the agent,
     /// and registering in that window re-pins the old signature. The completion
     /// handler is the documented point at which re-registering is safe, so the
     /// command does not exit until it has run.
-    static func uninstall() throws {
-        guard service.status != .notRegistered else { return }
+    static func uninstall() throws -> Removal {
+        guard service.status != .notRegistered else { return .notRegistered }
 
         let failure = Mutex<(any Error)?>(nil)
         let reaped = DispatchSemaphore(value: 0)
@@ -71,6 +79,8 @@ enum Installer {
         if let error = failure.withLock({ $0 }), !isAlreadyGone(error) {
             throw Failure("cannot remove the maccafe agent: \(error.localizedDescription)")
         }
+
+        return .removed
     }
 
     /// The service can be reaped between the status check and the call, and a

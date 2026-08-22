@@ -98,9 +98,13 @@ struct Uninstall: ParsableCommand {
     static let configuration = CommandConfiguration(abstract: "Remove the maccafe agent")
 
     func run() throws {
-        try Installer.uninstall()
-
-        print("maccafe: the agent is removed")
+        switch try Installer.uninstall() {
+        case .removed:
+            print("maccafe: the agent is removed")
+        case .notRegistered:
+            let bundle = Bundle.main.bundlePath
+            print("maccafe: no agent is registered for \(bundle), so nothing was removed")
+        }
     }
 }
 

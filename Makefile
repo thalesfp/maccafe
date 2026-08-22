@@ -85,6 +85,7 @@ install: bundle ## Install the app, register the agent, and link the CLI
 		}; \
 		echo "maccafe: $(LEGACY) is obsolete; remove it with 'cargo uninstall maccafe'"; \
 	fi
+	@[ -d "$(dir $(SYMLINK))" ] || sudo mkdir -p "$(dir $(SYMLINK))"
 	@assertions=$$(pmset -g assertions) || { \
 		echo "maccafe: cannot read pmset assertions, so a holder from before the"; \
 		echo "maccafe: rewrite cannot be ruled out; not installing"; \

@@ -102,7 +102,7 @@ install: bundle ## Install the app, register the agent, and link the CLI
 		exit 1; \
 	fi
 	@if [ -x "$(INSTALLED)/Contents/MacOS/maccafe" ]; then \
-		"$(INSTALLED)/Contents/MacOS/maccafe" uninstall; \
+		"$(INSTALLED)/Contents/MacOS/maccafe" uninstall || exit $$?; \
 		sleep 5; \
 	fi
 	rm -rf $(INSTALLED)
